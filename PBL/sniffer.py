@@ -4,7 +4,6 @@ import struct
 
 def main():
     conn = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(3))
-
     while True:
         raw_data, addr = conn.recvfrom(65535)
         dest_mac, source_mac, eth_proto, actual_data = ethernet_frame(raw_data)
