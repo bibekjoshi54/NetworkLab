@@ -34,7 +34,7 @@ if __name__ == '__main__':
                 code += '0'
             code = crc(msg, div,code)
             print('Output code:', code)
-            print("Message to be send",m1sg+code)
+            print("Message to be send",msg+code)
         elif case == 'r':
             code = msg[-(len(div) - 1):]
             msg = msg[0: -(len(div) -1)]
