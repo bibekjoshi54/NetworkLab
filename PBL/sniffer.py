@@ -1,41 +1,96 @@
+from extraction.ethernet import Ethernet
+from extraction.http import HTTP
+from extraction.icmp import ICMP
+from extraction.ipv4 import IPv4
+from extraction.tcp import TCP
+from extraction.udp import UDP
+from formatter.formatter import format_multi_line
+from extraction.pcap import Pcap
 import socket
-import textwrap
-import struct
+TAB_1 = '\t - '
+TAB_2 = '\t\t -'
+TAB_3 = '\t\t\t - '
+TAB_4 = '\t\t\t\t - '
+
+DATA_TAB_1 = '\t   '
+DATA_TAB_2 = '\t\t   '
+DATA_TAB_3 = '\t\t\t   '
+DATA_TAB_4 = '\t\t\t\t   '
+
 
 def main():
-    check = dict()
     conn = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(3))
+    pcap = Pcap('cp.pcap')
     while True:
-        raw_data, addr = conn.recvfrom(443)
-        dest_mac, source_mac, eth_proto, actual_data = ethernet_frame(raw_data)
-        print("Enternet Frame: ")
-        print("Destination: {}\nSource: {} \n protocol: {}".format(dest_mac, source_mac, eth_proto))
-        text = open('Log',mode='a+')
-        check[dest_mac] = 1
-        print(len(check))
-        text.write("Destination: {}\nSource: {} \n protocol: {}\n".format(dest_mac,source_mac,eth_proto))
-#unpack the ethernet frame
+        raw_data, addr = conn.recvfrom(65535)
+        pcap.write(raw_data)
+        eth = Ethernet(raw_data)
+        print('\nEthernet Frame:')
+        print(TAB_1 + 'Destination: {}, Source: {}, \
+              Protocol: {}'.format(eth.dest_mac, eth.source_mac, eth.proto))
 
-def ethernet_frame(data):
-    """Pass the captured frame"""
-    # ! tells it is the network data
-    # Starting 6 byte is the address of receiver
-    # After it 6 byte is of sender
-    # The 2 byte is used to tell the type of IP unsigned
+        # IPv4
+        if eth.proto == 8:
+            ipv4 = IPv4(eth.data)
+            print(TAB_1 + 'IPv4 Packet:')
+            print(TAB_2 + 'Version: {}, Header Length: {},TTL: {}\
+                  '.format(ipv4.version, ipv4.head_length, ipv4.time_to_live))
+            print(TAB_2 + 'Protocol: {}, Source: {},Target: {}\
+                  '.format(ipv4.proto, ipv4.src, ipv4.target))
 
-    dest_mac, source_mac, proto = struct.unpack('! 6s 6s H', data[:14])
-    return get_mac(dest_mac), get_mac(source_mac), socket.htons(proto), data[:14]
+            # ICMP
+            if ipv4.proto == 1:
+                icmp = ICMP(ipv4.data)
+                print(TAB_1 + 'ICMP Packet:')
+                print(TAB_2 + 'Type: {}, Code: {}, \Checksum: {},\
+                      '.format(icmp.type, icmp.code, icmp.checksum))
+                print(TAB_2 + 'ICMP Data:')
+                print(format_multi_line(DATA_TAB_3, icmp.data))
+            # TCP
+            elif ipv4.proto == 6:
+                tcp = TCP(ipv4.data)
+                print(TAB_1 + 'TCP Segment:')
+                print(TAB_2 + 'Source Port: {}, \
+                      Destination Port: {}'.format(tcp.src_port, tcp.dest_port))
+                print(TAB_2 + 'Sequence: {}, \Acknowledgment: \
+                      {}'.format(tcp.sequence, tcp.acknowledgement))
+                print(TAB_2 + 'Flags:')
+                print(TAB_3 + 'URG: {}, ACK: {}, PSH: \
+                      {}'.format(tcp.flag_urg, tcp.flag_ack, tcp.flag_psh))
+                print(TAB_3 + 'RST: {}, SYN: {}, FIN:\
+                      {}'.format(tcp.flag_rst, tcp.flag_syn, tcp.flag_fin))
 
-def get_mac(mac_raw):
-    """Convert the mac in human readable format"""
-    byte_str = map('{:02x}'.format, mac_raw)
-    return ':'.join(byte_str).upper()
+                if len(tcp.data) > 0:
 
-# get the detail of the IP Header
-def ipv4_packet(data):
-    version_header_length = data[0]
-    version = version_header_length >> 4
-    head_length = (version_header_length & 15)*4
-    time_to_live, protocol, src, target = struct.unpack('! 8x B B 2x 4s 4s',data[:20])
+                    # HTTP
+                    if tcp.src_port == 80 or tcp.dest_port == 80:
+                        print(TAB_2 + 'HTTP Data:')
+                        try:
+                            http = HTTP(tcp.data)
+                            http_info = str(http.data).split('\n')
+                            for line in http_info:
+                                print(DATA_TAB_3 + str(line))
+                        except:
+                            print(format_multi_line(DATA_TAB_3, tcp.data))
+                    else:
+                        print(TAB_2 + 'TCP Data:')
+                        print(format_multi_line(DATA_TAB_3, tcp.data))
+
+            # UDP
+            elif ipv4.proto == 17:
+                udp = UDP(ipv4.data)
+                print(TAB_1 + 'UDP Segment:')
+                print(TAB_2 + 'Source Port: {}, Destination Port: {},\
+                      Length: {}'.format(udp.src_port, udp.dest_port, udp.size))
+
+            # Other IPv4
+            else:
+                print(TAB_1 + 'Other IPv4 Data:')
+                print(format_multi_line(DATA_TAB_2, ipv4.data))
+
+        else:
+            print('Ethernet Data:')
+            print(format_multi_line(DATA_TAB_1, eth.data))
+
 
 main()
